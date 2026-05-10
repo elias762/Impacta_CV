@@ -2,10 +2,10 @@ import { getDb } from "./db";
 
 export interface CapacityWeek {
   index: number;
-  start: string; // YYYY-MM-DD (Monday)
-  end: string;   // YYYY-MM-DD (Sunday)
-  iso_label: string; // e.g. "W10"
-  short_label: string; // e.g. "Mar 03"
+  start: string;
+  end: string;
+  iso_label: string;
+  short_label: string;
 }
 
 export interface CapacityCellProject {
@@ -26,15 +26,10 @@ export interface CapacityBar {
   project_name: string;
   client: string | null;
   allocation_pct: number;
-  /** inclusive start week index in the visible window */
   start_idx: number;
-  /** inclusive end week index */
   end_idx: number;
-  /** vertical lane (0-based) so that overlapping projects stack rather than collide */
   track: number;
-  /** true if the staffing extends earlier than the visible window */
   clipped_left: boolean;
-  /** true if the staffing extends later than the visible window */
   clipped_right: boolean;
 }
 
@@ -54,16 +49,17 @@ export interface CapacityGrid {
 }
 
 export interface CapacityArgs {
-  fromDate: string; // any ISO date; we snap to its Monday
+  fromDate: string;
   weeks: number;
   seniority?: string;
   sector?: string;
 }
 
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n);
 }
-
 function toIsoDate(d: Date): string {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
@@ -71,22 +67,19 @@ function toIsoDate(d: Date): string {
 export function snapToMonday(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) throw new Error(`Bad date: ${iso}`);
-  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  const dow = d.getUTCDay();
   const offset = dow === 0 ? -6 : 1 - dow;
   d.setUTCDate(d.getUTCDate() + offset);
   return toIsoDate(d);
 }
 
 function isoWeekNumber(d: Date): number {
-  // ISO 8601 week number
   const tmp = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const dayNum = tmp.getUTCDay() || 7;
   tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
   return Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
 }
-
-const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function buildWeeks(fromMonday: string, count: number): CapacityWeek[] {
   const weeks: CapacityWeek[] = [];
@@ -118,28 +111,27 @@ interface OverlappingStaffing {
   client: string | null;
 }
 
-export function getCapacityGrid(args: CapacityArgs): CapacityGrid {
+export async function getCapacityGrid(args: CapacityArgs): Promise<CapacityGrid> {
   const fromMonday = snapToMonday(args.fromDate);
   const weeks = buildWeeks(fromMonday, args.weeks);
   const windowStart = weeks[0]!.start;
   const windowEnd = weeks[weeks.length - 1]!.end;
 
-  const db = getDb();
+  const db = await getDb();
 
-  const consultantConditions: string[] = [];
-  const consultantParams: Record<string, unknown> = {};
+  const conds: string[] = [];
+  const params: Record<string, unknown> = {};
   if (args.seniority) {
-    consultantConditions.push("seniority = @seniority");
-    consultantParams.seniority = args.seniority;
+    conds.push("seniority = :seniority");
+    params.seniority = args.seniority;
   }
   if (args.sector) {
-    consultantConditions.push("sector = @sector");
-    consultantParams.sector = args.sector;
+    conds.push("sector = :sector");
+    params.sector = args.sector;
   }
-  const where = consultantConditions.length ? `WHERE ${consultantConditions.join(" AND ")}` : "";
-  const consultants = db
-    .prepare(
-      `SELECT id, name, seniority, sector FROM consultants ${where}
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  const consultantsR = await db.execute({
+    sql: `SELECT id, name, seniority, sector FROM consultants ${where}
        ORDER BY
          CASE seniority
            WHEN 'Partner' THEN 1
@@ -153,26 +145,32 @@ export function getCapacityGrid(args: CapacityArgs): CapacityGrid {
            ELSE 9
          END,
          name`,
-    )
-    .all(consultantParams) as Array<{ id: number; name: string; seniority: string | null; sector: string | null }>;
+    args: params,
+  });
+  const consultants = consultantsR.rows as unknown as Array<{
+    id: number;
+    name: string;
+    seniority: string | null;
+    sector: string | null;
+  }>;
 
-  const overlapping = db
-    .prepare(
-      `SELECT s.id              AS staffing_id,
-              s.consultant_id   AS consultant_id,
-              s.start_date      AS start_date,
-              s.end_date        AS end_date,
-              s.allocation_pct  AS allocation_pct,
-              p.id              AS project_id,
-              p.name            AS project_name,
-              p.client          AS client
-         FROM staffings s
-         JOIN project_slots ps ON ps.id = s.project_slot_id
-         JOIN projects p       ON p.id  = ps.project_id
-        WHERE s.start_date <= @windowEnd
-          AND s.end_date   >= @windowStart`,
-    )
-    .all({ windowStart, windowEnd }) as OverlappingStaffing[];
+  const overlappingR = await db.execute({
+    sql: `SELECT s.id              AS staffing_id,
+                 s.consultant_id   AS consultant_id,
+                 s.start_date      AS start_date,
+                 s.end_date        AS end_date,
+                 s.allocation_pct  AS allocation_pct,
+                 p.id              AS project_id,
+                 p.name            AS project_name,
+                 p.client          AS client
+            FROM staffings s
+            JOIN project_slots ps ON ps.id = s.project_slot_id
+            JOIN projects p       ON p.id  = ps.project_id
+           WHERE s.start_date <= :end_date
+             AND s.end_date   >= :start_date`,
+    args: { start_date: windowStart, end_date: windowEnd },
+  });
+  const overlapping = overlappingR.rows as unknown as OverlappingStaffing[];
 
   const byConsultant = new Map<number, OverlappingStaffing[]>();
   for (const s of overlapping) {
@@ -186,7 +184,6 @@ export function getCapacityGrid(args: CapacityArgs): CapacityGrid {
     const list = byConsultant.get(c.id) ?? [];
 
     const rawBars: Array<Omit<CapacityBar, "track">> = [];
-
     for (const s of list) {
       let startIdx = -1;
       let endIdx = -1;
@@ -218,9 +215,7 @@ export function getCapacityGrid(args: CapacityArgs): CapacityGrid {
         });
       }
     }
-
     const { bars, trackCount } = packTracks(rawBars);
-
     return {
       consultant_id: c.id,
       consultant_name: c.name,
@@ -242,7 +237,7 @@ function packTracks(input: Array<Omit<CapacityBar, "track">>): {
   const sorted = [...input].sort(
     (a, b) => a.start_idx - b.start_idx || a.end_idx - b.end_idx,
   );
-  const trackEnds: number[] = []; // last end_idx assigned per track; -1 means free
+  const trackEnds: number[] = [];
   const out: CapacityBar[] = [];
   for (const bar of sorted) {
     let track = trackEnds.findIndex((end) => end < bar.start_idx);

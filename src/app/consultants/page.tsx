@@ -3,7 +3,7 @@ import { searchConsultants, SECTORS, SENIORITIES } from "@/lib/consultants";
 
 export const dynamic = "force-dynamic";
 
-export default function ConsultantsPage({
+export default async function ConsultantsPage({
   searchParams,
 }: {
   searchParams: { q?: string; sector?: string; seniority?: string };
@@ -12,7 +12,7 @@ export default function ConsultantsPage({
   const sector = searchParams.sector ?? "";
   const seniority = searchParams.seniority ?? "";
 
-  const consultants = searchConsultants({ q, sector, seniority });
+  const consultants = await searchConsultants({ q, sector, seniority });
 
   return (
     <div>

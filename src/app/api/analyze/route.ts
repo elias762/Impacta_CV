@@ -7,13 +7,12 @@ import { getDb } from "@/lib/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function uniqueSkillVocabulary(): string[] {
-  const rows = getDb()
-    .prepare("SELECT skills FROM consultants WHERE skills IS NOT NULL")
-    .all() as Array<{ skills: string }>;
+async function uniqueSkillVocabulary(): Promise<string[]> {
+  const db = await getDb();
+  const r = await db.execute("SELECT skills FROM consultants WHERE skills IS NOT NULL");
   const set = new Set<string>();
-  for (const r of rows) {
-    for (const s of r.skills.split(",")) {
+  for (const row of r.rows as unknown as Array<{ skills: string }>) {
+    for (const s of row.skills.split(",")) {
       const t = s.trim();
       if (t.length >= 3) set.add(t);
     }
@@ -63,7 +62,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const draft = await generateProjectDraft(briefing, uniqueSkillVocabulary());
+    const draft = await generateProjectDraft(briefing, await uniqueSkillVocabulary());
     return NextResponse.json({ draft, sources: sourceNotes });
   } catch (err) {
     console.error("/api/analyze failed:", err);

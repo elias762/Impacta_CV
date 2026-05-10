@@ -19,7 +19,7 @@ async function staffAction(formData: FormData) {
   const consultantId = Number(formData.get("consultant_id"));
   const projectId = Number(formData.get("project_id"));
   if (!slotId || !consultantId) throw new Error("Missing slot or consultant id");
-  staffSlot(slotId, consultantId);
+  await staffSlot(slotId, consultantId);
   revalidatePath(`/projects/${projectId}`);
 }
 
@@ -28,7 +28,7 @@ async function unstaffAction(formData: FormData) {
   const staffingId = Number(formData.get("staffing_id"));
   const projectId = Number(formData.get("project_id"));
   if (!staffingId) return;
-  unstaffSlot(staffingId);
+  await unstaffSlot(staffingId);
   revalidatePath(`/projects/${projectId}`);
 }
 
@@ -36,19 +36,27 @@ async function deleteProjectAction(formData: FormData) {
   "use server";
   const id = Number(formData.get("id"));
   if (!id) return;
-  deleteProject(id);
+  await deleteProject(id);
   redirect("/projects");
 }
 
-export default function ProjectDetail({ params }: { params: { id: string } }) {
+export default async function ProjectDetail({ params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) notFound();
-  const project = getProject(id);
+  const project = await getProject(id);
   if (!project) notFound();
 
-  const slots = getProjectSlots(id);
-  const ctx = buildRecommendationContext(project);
+  const slots = await getProjectSlots(id);
+  const ctx = await buildRecommendationContext(project);
   const filledIds = slots.flatMap((s) => (s.assignment ? [s.assignment.consultant_id] : []));
+
+  // Pre-fetch recommendations for every open slot so the JSX stays sync.
+  const recsBySlot = new Map<number, Awaited<ReturnType<typeof recommendForSlot>>>();
+  for (const s of slots) {
+    if (!s.assignment) {
+      recsBySlot.set(s.slot.id, await recommendForSlot(s.slot, ctx, { excludeConsultantIds: filledIds }));
+    }
+  }
 
   const filled = slots.filter((s) => s.assignment).length;
   const total = slots.length;
@@ -135,7 +143,7 @@ export default function ProjectDetail({ params }: { params: { id: string } }) {
                 />
               );
             }
-            const recs = recommendForSlot(s.slot, ctx, { excludeConsultantIds: filledIds });
+            const recs = recsBySlot.get(s.slot.id) ?? [];
             return (
               <OpenSlot
                 key={s.slot.id}

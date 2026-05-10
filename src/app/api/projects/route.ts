@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   }
   if (slots.length === 0) return NextResponse.json({ error: "At least one slot is required" }, { status: 400 });
 
-  const id = createProject(
+  const id = await createProject(
     {
       name: body.name.trim(),
       client: body.client?.trim() || null,

@@ -8,8 +8,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
-  const data = getStaffingDashboard();
+export default async function DashboardPage() {
+  const data = await getStaffingDashboard();
   const { kpis, openSeats, benchSorted, benchAllCount, today } = data;
 
   return (
@@ -122,7 +122,7 @@ function OpenSeatsPanel({
   list,
   today,
 }: {
-  list: ReturnType<typeof getStaffingDashboard>["openSeats"];
+  list: Awaited<ReturnType<typeof getStaffingDashboard>>["openSeats"];
   today: string;
 }) {
   return (
@@ -194,7 +194,7 @@ function BenchPanel({
   list,
   totalRows,
 }: {
-  list: ReturnType<typeof getStaffingDashboard>["benchSorted"];
+  list: Awaited<ReturnType<typeof getStaffingDashboard>>["benchSorted"];
   totalRows: number;
 }) {
   return (

@@ -30,7 +30,7 @@ function colorForProject(projectId: number): string {
 const TRACK_HEIGHT_REM = 1.75; // h-7
 const WEEK_MIN_REM = 4.25;
 
-export default function CapacityPage({ searchParams }: PageProps) {
+export default async function CapacityPage({ searchParams }: PageProps) {
   const today = new Date().toISOString().slice(0, 10);
   const fromInput = searchParams.from?.trim() || today;
   let fromMonday: string;
@@ -44,7 +44,7 @@ export default function CapacityPage({ searchParams }: PageProps) {
   const seniority = searchParams.seniority || undefined;
   const sector = searchParams.sector || undefined;
 
-  const grid = getCapacityGrid({ fromDate: fromMonday, weeks, seniority, sector });
+  const grid = await getCapacityGrid({ fromDate: fromMonday, weeks, seniority, sector });
   const stats = computeStats(grid);
 
   return (

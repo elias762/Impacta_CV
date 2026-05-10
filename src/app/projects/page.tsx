@@ -3,9 +3,12 @@ import { listProjects, projectFillStats } from "@/lib/projects";
 
 export const dynamic = "force-dynamic";
 
-export default function ProjectsPage() {
-  const projects = listProjects();
-  const stats = new Map(projects.map((p) => [p.id, projectFillStats(p.id)]));
+export default async function ProjectsPage() {
+  const projects = await listProjects();
+  const statEntries = await Promise.all(
+    projects.map(async (p) => [p.id, await projectFillStats(p.id)] as const),
+  );
+  const stats = new Map(statEntries);
 
   return (
     <div>

@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const id = Number(params.id);
   if (!Number.isFinite(id)) return new NextResponse("Bad id", { status: 400 });
 
-  const c = getConsultant(id);
+  const c = await getConsultant(id);
   if (!c || !c.cv_file_path) return new NextResponse("Not found", { status: 404 });
 
   const fullPath = join(UPLOADS_DIR, c.cv_file_path);

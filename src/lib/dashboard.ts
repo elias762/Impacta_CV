@@ -67,14 +67,17 @@ export function relativeKickoff(today: string, start: string): { label: string; 
   return { label: `starts ${start}`, tone: "slate" };
 }
 
-export function getStaffingDashboard(): DashboardData {
+export async function getStaffingDashboard(): Promise<DashboardData> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const projectsWithSlots = listProjects().map((p) => ({
-    project: p,
-    slots: getProjectSlots(p.id),
-    fill: projectFillStats(p.id),
-  }));
+  const projects = await listProjects();
+  const projectsWithSlots = await Promise.all(
+    projects.map(async (p) => ({
+      project: p,
+      slots: await getProjectSlots(p.id),
+      fill: await projectFillStats(p.id),
+    })),
+  );
 
   const openSeats: OpenSeatEntry[] = projectsWithSlots
     .map((p) => {
@@ -93,7 +96,6 @@ export function getStaffingDashboard(): DashboardData {
     })
     .filter((x): x is OpenSeatEntry => x !== null)
     .sort((x, y) => {
-      // not-yet-started first, then in-flight by closest kickoff (absolute distance).
       const xPos = x.daysToKickoff >= 0;
       const yPos = y.daysToKickoff >= 0;
       if (xPos !== yPos) return xPos ? -1 : 1;
@@ -111,7 +113,7 @@ export function getStaffingDashboard(): DashboardData {
     }
   }
 
-  const grid = getCapacityGrid({ fromDate: today, weeks: 12 });
+  const grid = await getCapacityGrid({ fromDate: today, weeks: 12 });
 
   let freeThisWeek = 0;
   let utilSum = 0;

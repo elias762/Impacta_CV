@@ -12,50 +12,46 @@ export interface ConsultantStaffing {
   slot_label: string | null;
 }
 
-/**
- * Sum of allocation_pct for all staffings of `consultantId` whose date range
- * overlaps [start, end]. Used to detect over-allocation.
- */
-export function consultantAllocationInRange(
+export async function consultantAllocationInRange(
   consultantId: number,
   start: string,
   end: string,
-): number {
-  const row = getDb()
-    .prepare(
-      `SELECT COALESCE(SUM(allocation_pct), 0) AS total
-         FROM staffings
-        WHERE consultant_id = @cid
-          AND start_date <= @end
-          AND end_date   >= @start`,
-    )
-    .get({ cid: consultantId, start, end }) as { total: number };
-  return row.total;
+): Promise<number> {
+  const db = await getDb();
+  const r = await db.execute({
+    sql: `SELECT COALESCE(SUM(allocation_pct), 0) AS total
+            FROM staffings
+           WHERE consultant_id = :cid
+             AND start_date <= :end_date
+             AND end_date   >= :start_date`,
+    args: { cid: consultantId, start_date: start, end_date: end },
+  });
+  return ((r.rows[0] as unknown as { total: number })?.total) ?? 0;
 }
 
-export function listConsultantStaffings(consultantId: number): ConsultantStaffing[] {
-  return getDb()
-    .prepare(
-      `SELECT s.id              AS staffing_id,
-              p.id              AS project_id,
-              p.name            AS project_name,
-              p.client          AS client,
-              s.start_date      AS start_date,
-              s.end_date        AS end_date,
-              s.allocation_pct  AS allocation_pct,
-              ps.seniority      AS seniority,
-              ps.label          AS slot_label
-         FROM staffings s
-         JOIN project_slots ps ON ps.id = s.project_slot_id
-         JOIN projects p       ON p.id  = ps.project_id
-        WHERE s.consultant_id = @cid
-        ORDER BY s.start_date ASC`,
-    )
-    .all({ cid: consultantId }) as ConsultantStaffing[];
+export async function listConsultantStaffings(consultantId: number): Promise<ConsultantStaffing[]> {
+  const db = await getDb();
+  const r = await db.execute({
+    sql: `SELECT s.id              AS staffing_id,
+                 p.id              AS project_id,
+                 p.name            AS project_name,
+                 p.client          AS client,
+                 s.start_date      AS start_date,
+                 s.end_date        AS end_date,
+                 s.allocation_pct  AS allocation_pct,
+                 ps.seniority      AS seniority,
+                 ps.label          AS slot_label
+            FROM staffings s
+            JOIN project_slots ps ON ps.id = s.project_slot_id
+            JOIN projects p       ON p.id  = ps.project_id
+           WHERE s.consultant_id = :cid
+           ORDER BY s.start_date ASC`,
+    args: { cid: consultantId },
+  });
+  return r.rows as unknown as ConsultantStaffing[];
 }
 
-/** Allocation overlapping today (UTC) for a quick "current utilization" badge. */
-export function currentUtilizationPct(consultantId: number): number {
+export async function currentUtilizationPct(consultantId: number): Promise<number> {
   const today = new Date().toISOString().slice(0, 10);
   return consultantAllocationInRange(consultantId, today, today);
 }

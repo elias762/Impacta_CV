@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { asNumber, getDb } from "./db";
 
 export const SECTORS = [
   "Consumer Products & Retail",
@@ -64,49 +64,49 @@ export interface SearchFilters {
   seniority?: string;
 }
 
-export function createConsultant(input: ConsultantInput): number {
-  const db = getDb();
-  const stmt = db.prepare(`
-    INSERT INTO consultants
-      (name, email, role, seniority, sector, location, years_experience,
-       languages, skills, summary, cv_file_name, cv_file_path, cv_text)
-    VALUES
-      (@name, @email, @role, @seniority, @sector, @location, @years_experience,
-       @languages, @skills, @summary, @cv_file_name, @cv_file_path, @cv_text)
-  `);
-  const result = stmt.run({
-    name: input.name,
-    email: input.email ?? null,
-    role: input.role ?? null,
-    seniority: input.seniority ?? null,
-    sector: input.sector ?? null,
-    location: input.location ?? null,
-    years_experience: input.years_experience ?? null,
-    languages: input.languages ?? null,
-    skills: input.skills ?? null,
-    summary: input.summary ?? null,
-    cv_file_name: input.cv_file_name ?? null,
-    cv_file_path: input.cv_file_path ?? null,
-    cv_text: input.cv_text ?? null,
+export async function createConsultant(input: ConsultantInput): Promise<number> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `INSERT INTO consultants
+            (name, email, role, seniority, sector, location, years_experience,
+             languages, skills, summary, cv_file_name, cv_file_path, cv_text)
+          VALUES
+            (:name, :email, :role, :seniority, :sector, :location, :years_experience,
+             :languages, :skills, :summary, :cv_file_name, :cv_file_path, :cv_text)`,
+    args: {
+      name: input.name,
+      email: input.email ?? null,
+      role: input.role ?? null,
+      seniority: input.seniority ?? null,
+      sector: input.sector ?? null,
+      location: input.location ?? null,
+      years_experience: input.years_experience ?? null,
+      languages: input.languages ?? null,
+      skills: input.skills ?? null,
+      summary: input.summary ?? null,
+      cv_file_name: input.cv_file_name ?? null,
+      cv_file_path: input.cv_file_path ?? null,
+      cv_text: input.cv_text ?? null,
+    },
   });
-  return Number(result.lastInsertRowid);
+  return asNumber(result.lastInsertRowid);
 }
 
-export function getConsultant(id: number): Consultant | null {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM consultants WHERE id = ?").get(id) as Consultant | undefined;
-  return row ?? null;
+export async function getConsultant(id: number): Promise<Consultant | null> {
+  const db = await getDb();
+  const r = await db.execute({ sql: "SELECT * FROM consultants WHERE id = :id", args: { id } });
+  return (r.rows[0] as unknown as Consultant) ?? null;
 }
 
-export function deleteConsultant(id: number): Consultant | null {
-  const existing = getConsultant(id);
+export async function deleteConsultant(id: number): Promise<Consultant | null> {
+  const existing = await getConsultant(id);
   if (!existing) return null;
-  getDb().prepare("DELETE FROM consultants WHERE id = ?").run(id);
+  const db = await getDb();
+  await db.execute({ sql: "DELETE FROM consultants WHERE id = :id", args: { id } });
   return existing;
 }
 
 function escapeFtsTerm(term: string): string {
-  // Wrap each whitespace-separated token in double quotes for safety, then OR them as a prefix match.
   return term
     .split(/\s+/)
     .filter(Boolean)
@@ -114,8 +114,8 @@ function escapeFtsTerm(term: string): string {
     .join(" AND ");
 }
 
-export function searchConsultants(filters: SearchFilters): Consultant[] {
-  const db = getDb();
+export async function searchConsultants(filters: SearchFilters): Promise<Consultant[]> {
+  const db = await getDb();
   const where: string[] = [];
   const params: Record<string, unknown> = {};
 
@@ -125,21 +125,21 @@ export function searchConsultants(filters: SearchFilters): Consultant[] {
     const term = escapeFtsTerm(filters.q.trim());
     if (term) {
       sql += ` JOIN consultants_fts f ON f.rowid = c.id`;
-      where.push(`consultants_fts MATCH @q`);
+      where.push(`consultants_fts MATCH :q`);
       params.q = term;
     }
   }
   if (filters.sector) {
-    where.push(`c.sector = @sector`);
+    where.push(`c.sector = :sector`);
     params.sector = filters.sector;
   }
   if (filters.seniority) {
-    where.push(`c.seniority = @seniority`);
+    where.push(`c.seniority = :seniority`);
     params.seniority = filters.seniority;
   }
-
   if (where.length) sql += ` WHERE ${where.join(" AND ")}`;
   sql += ` ORDER BY c.updated_at DESC LIMIT 200`;
 
-  return db.prepare(sql).all(params) as Consultant[];
+  const result = await db.execute({ sql, args: params });
+  return result.rows as unknown as Consultant[];
 }

@@ -214,22 +214,19 @@ ${args.skills.join(" · ")}
 }
 
 // --- Reset ----------------------------------------------------------------
-function resetAll() {
-  const db = getDb();
-  const rows = db.prepare("SELECT cv_file_path FROM consultants WHERE cv_file_path IS NOT NULL").all() as Array<{ cv_file_path: string }>;
-  for (const r of rows) {
+async function resetAll() {
+  const db = await getDb();
+  const rowsR = await db.execute("SELECT cv_file_path FROM consultants WHERE cv_file_path IS NOT NULL");
+  for (const r of rowsR.rows as unknown as Array<{ cv_file_path: string }>) {
     try { unlinkSync(join(UPLOADS_DIR, r.cv_file_path)); } catch { /* ignore */ }
   }
   // staffings + project_slots cascade from projects; consultants delete cascades through staffings
-  db.exec(`
-    DELETE FROM staffings;
-    DELETE FROM project_slots;
-    DELETE FROM projects;
-    DELETE FROM consultants;
-    DELETE FROM sqlite_sequence WHERE name IN ('consultants','projects','project_slots','staffings');
-  `);
+  await db.execute("DELETE FROM staffings");
+  await db.execute("DELETE FROM project_slots");
+  await db.execute("DELETE FROM projects");
+  await db.execute("DELETE FROM consultants");
+  await db.execute("DELETE FROM sqlite_sequence WHERE name IN ('consultants','projects','project_slots','staffings')");
 
-  // also wipe orphaned demo files left over from previous runs
   try {
     for (const f of readdirSync(UPLOADS_DIR)) {
       if (f.endsWith(".txt") || f.endsWith(".pdf") || f.endsWith(".docx")) {
@@ -362,11 +359,11 @@ const DEMO_PROJECTS: DemoProject[] = [
   },
 ];
 
-function seedDemoProjects() {
+async function seedDemoProjects() {
   for (const dp of DEMO_PROJECTS) {
     const start = addDays(today, dp.start_offset_days);
     const end = addDays(start, dp.duration_days);
-    const projectId = createProject(
+    const projectId = await createProject(
       {
         name: dp.name,
         client: dp.client,
@@ -381,17 +378,19 @@ function seedDemoProjects() {
 
     if (!dp.prefillTopK) continue;
 
-    const project = getDb().prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as Parameters<typeof buildRecommendationContext>[0];
-    const ctx = buildRecommendationContext(project);
-    const slotPairs = getProjectSlots(projectId);
+    const db = await getDb();
+    const r = await db.execute({ sql: "SELECT * FROM projects WHERE id = :id", args: { id: projectId } });
+    const project = r.rows[0] as unknown as Parameters<typeof buildRecommendationContext>[0];
+    const ctx = await buildRecommendationContext(project);
+    const slotPairs = await getProjectSlots(projectId);
     const usedConsultantIds: number[] = [];
     let prefilled = 0;
     for (const sp of slotPairs) {
       if (prefilled >= dp.prefillTopK) break;
-      const recs = recommendForSlot(sp.slot, ctx, { excludeConsultantIds: usedConsultantIds, limit: 1 });
+      const recs = await recommendForSlot(sp.slot, ctx, { excludeConsultantIds: usedConsultantIds, limit: 1 });
       if (recs.length === 0) continue;
       try {
-        staffSlot(sp.slot.id, recs[0]!.consultant.id);
+        await staffSlot(sp.slot.id, recs[0]!.consultant.id);
         usedConsultantIds.push(recs[0]!.consultant.id);
         prefilled++;
       } catch {
@@ -402,9 +401,9 @@ function seedDemoProjects() {
 }
 
 // --- Main -----------------------------------------------------------------
-function main() {
-  mkdirSync(UPLOADS_DIR, { recursive: true });
-  resetAll();
+async function main() {
+  try { mkdirSync(UPLOADS_DIR, { recursive: true }); } catch { /* read-only fs is fine */ }
+  await resetAll();
 
   const sectorList = [...SECTORS];
   let sectorCursor = 0;
@@ -445,9 +444,15 @@ function main() {
       });
 
       const stored = `${randomUUID()}.txt`;
-      writeFileSync(join(UPLOADS_DIR, stored), cvText, "utf8");
+      let storedPath: string | null = null;
+      try {
+        writeFileSync(join(UPLOADS_DIR, stored), cvText, "utf8");
+        storedPath = stored;
+      } catch {
+        // read-only filesystem (e.g. Vercel) — keep cv_text but skip the file.
+      }
 
-      createConsultant({
+      await createConsultant({
         name: fullName,
         email,
         role,
@@ -458,8 +463,8 @@ function main() {
         languages: langs.join(", "),
         skills: skills.join(", "),
         summary: `${tier.level} in ${sector}. ${yrs} yrs. Focus: ${skills.slice(0, 3).join(", ")}.`,
-        cv_file_name: `${slug}_CV.txt`,
-        cv_file_path: stored,
+        cv_file_name: storedPath ? `${slug}_CV.txt` : null,
+        cv_file_path: storedPath,
         cv_text: cvText,
       });
       inserted++;
@@ -468,10 +473,11 @@ function main() {
 
   console.log(`Seeded ${inserted} consultants across ${sectorList.length} sectors.`);
 
-  seedDemoProjects();
-  const projectCount = (getDb().prepare("SELECT count(*) AS n FROM projects").get() as { n: number }).n;
-  const staffingCount = (getDb().prepare("SELECT count(*) AS n FROM staffings").get() as { n: number }).n;
-  console.log(`Seeded ${projectCount} projects with ${staffingCount} pre-filled staffings.`);
+  await seedDemoProjects();
+  const db = await getDb();
+  const pc = (await db.execute("SELECT count(*) AS n FROM projects")).rows[0] as unknown as { n: number };
+  const sc = (await db.execute("SELECT count(*) AS n FROM staffings")).rows[0] as unknown as { n: number };
+  console.log(`Seeded ${pc.n} projects with ${sc.n} pre-filled staffings.`);
 }
 
-main();
+main().catch((e) => { console.error(e); process.exit(1); });

@@ -12,21 +12,21 @@ async function deleteAction(formData: FormData) {
   "use server";
   const id = Number(formData.get("id"));
   if (!Number.isFinite(id)) return;
-  const removed = deleteConsultant(id);
+  const removed = await deleteConsultant(id);
   if (removed?.cv_file_path) {
     await unlink(join(UPLOADS_DIR, removed.cv_file_path)).catch(() => {});
   }
-  redirect("/");
+  redirect("/consultants");
 }
 
-export default function ConsultantDetail({ params }: { params: { id: string } }) {
+export default async function ConsultantDetail({ params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) notFound();
-  const c = getConsultant(id);
+  const c = await getConsultant(id);
   if (!c) notFound();
 
-  const staffings = listConsultantStaffings(c.id);
-  const utilization = currentUtilizationPct(c.id);
+  const staffings = await listConsultantStaffings(c.id);
+  const utilization = await currentUtilizationPct(c.id);
   const utilColor =
     utilization >= 100
       ? "bg-red-100 text-red-800"

@@ -22,21 +22,26 @@ async function uploadAction(formData: FormData) {
       throw new Error("CV must be a PDF, DOCX, or TXT file");
     }
     const buffer = Buffer.from(await file.arrayBuffer());
-    await mkdir(UPLOADS_DIR, { recursive: true });
-    const ext = extname(file.name) || ".bin";
-    const stored = `${randomUUID()}${ext}`;
-    const fullPath = join(UPLOADS_DIR, stored);
-    await writeFile(fullPath, buffer);
-
     cvFileName = file.name;
-    cvFilePath = stored;
     cvText = await extractCvText(buffer, file.name);
+    // Filesystem writes only succeed where the runtime is writable (local dev,
+    // Fly/Railway with a disk). Vercel serverless is read-only — we skip the
+    // file persistence in that case but still keep the extracted text in the DB.
+    try {
+      await mkdir(UPLOADS_DIR, { recursive: true });
+      const ext = extname(file.name) || ".bin";
+      const stored = `${randomUUID()}${ext}`;
+      await writeFile(join(UPLOADS_DIR, stored), buffer);
+      cvFilePath = stored;
+    } catch (err) {
+      console.warn("CV file storage skipped (read-only filesystem?):", (err as Error).message);
+    }
   }
 
   const yearsRaw = String(formData.get("years_experience") ?? "").trim();
   const years = yearsRaw === "" ? null : Number.parseInt(yearsRaw, 10);
 
-  const id = createConsultant({
+  const id = await createConsultant({
     name,
     email: orNull(formData.get("email")),
     role: orNull(formData.get("role")),
