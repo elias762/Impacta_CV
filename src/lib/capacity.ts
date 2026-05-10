@@ -120,7 +120,7 @@ export async function getCapacityGrid(args: CapacityArgs): Promise<CapacityGrid>
   const db = await getDb();
 
   const conds: string[] = [];
-  const params: Record<string, unknown> = {};
+  const params: Record<string, string | number | null> = {};
   if (args.seniority) {
     conds.push("seniority = :seniority");
     params.seniority = args.seniority;

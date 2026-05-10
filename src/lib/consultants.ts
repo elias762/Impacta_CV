@@ -117,7 +117,7 @@ function escapeFtsTerm(term: string): string {
 export async function searchConsultants(filters: SearchFilters): Promise<Consultant[]> {
   const db = await getDb();
   const where: string[] = [];
-  const params: Record<string, unknown> = {};
+  const params: Record<string, string | number | null> = {};
 
   let sql = `SELECT c.* FROM consultants c`;
 
