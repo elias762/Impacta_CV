@@ -134,15 +134,18 @@ export async function getCapacityGrid(args: CapacityArgs): Promise<CapacityGrid>
     sql: `SELECT id, name, seniority, sector FROM consultants ${where}
        ORDER BY
          CASE seniority
-           WHEN 'Partner' THEN 1
-           WHEN 'Principal' THEN 2
-           WHEN 'Senior Manager' THEN 3
-           WHEN 'Manager' THEN 4
-           WHEN 'Senior Consultant' THEN 5
-           WHEN 'Consultant' THEN 6
-           WHEN 'Associate' THEN 7
-           WHEN 'Analyst' THEN 8
-           ELSE 9
+           WHEN 'Senior Partner' THEN 1
+           WHEN 'Partner' THEN 2
+           WHEN 'Associate Partner' THEN 3
+           WHEN 'Principal' THEN 4
+           WHEN 'Senior Manager' THEN 5
+           WHEN 'Manager' THEN 6
+           WHEN 'Senior Consultant' THEN 7
+           WHEN 'Consultant' THEN 8
+           WHEN 'Associate Consultant' THEN 9
+           WHEN 'Associate' THEN 10
+           WHEN 'Analyst' THEN 11
+           ELSE 12
          END,
          name`,
     args: params,

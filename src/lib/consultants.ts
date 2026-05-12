@@ -12,12 +12,15 @@ export const SECTORS = [
 export const SENIORITIES = [
   "Analyst",
   "Associate",
+  "Associate Consultant",
   "Consultant",
   "Senior Consultant",
   "Manager",
   "Senior Manager",
   "Principal",
+  "Associate Partner",
   "Partner",
+  "Senior Partner",
 ] as const;
 
 export type Sector = (typeof SECTORS)[number];

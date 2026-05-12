@@ -2,12 +2,15 @@ import { getCapacityGrid } from "./capacity";
 import { getProjectSlots, listProjects, projectFillStats, Project } from "./projects";
 
 export const SENIORITY_DASHBOARD_ORDER = [
+  "Senior Partner",
   "Partner",
+  "Associate Partner",
   "Principal",
   "Senior Manager",
   "Manager",
   "Senior Consultant",
   "Consultant",
+  "Associate Consultant",
   "Associate",
   "Analyst",
 ] as const;
